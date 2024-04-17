@@ -1,0 +1,74 @@
+---
+title: "620Project2"
+output: pdf_document
+date: "2024-04-15"
+---
+
+```{r}
+library(readxl)
+
+# Read in data sheets from excel docs
+screentime_data <- read_excel("Fulldata_620W24_Project2.xlsx", sheet = "screentime")
+screentime_data$Date <- as.Date(screentime_data$Date, format = "%m/%d/%Y")
+baseline_data <- read_excel("Fulldata_620W24_Project2.xlsx", sheet = "baseline")
+colnames(screentime_data)[which(colnames(screentime_data) == "pseudo_ID")] <- "pseudo_id"
+
+# Merge data into one data frame
+merged_data <- merge(screentime_data, baseline_data, by = "pseudo_id")
+colnames(merged_data) <- make.names(colnames(merged_data))
+
+# Change columns to numeric that are supposed to be
+numeric_cols <- colnames(merged_data)[!colnames(merged_data) %in% c("Treatment", "Total.ST")]
+merged_data[numeric_cols] <- lapply(merged_data[numeric_cols], as.numeric)
+
+# Calculate the percentage of missing values for each pseudo_id
+missing_percentage <- rowMeans(is.na(merged_data[, c("Total.ST.min", "Pickups")])) * 100
+
+# Identify pseudo_ids with over 50% NA values
+pseudo_ids_to_drop <- names(missing_percentage[missing_percentage > 50])
+
+# Drop rows with pseudo_ids that have over 50% NA values
+merged_data <- merged_data[!merged_data$pseudo_id %in% pseudo_ids_to_drop, ]
+
+# Print the pseudo_ids that have been dropped
+cat("Pseudo_ids dropped due to over 50% missing values for Total.ST.min and Pickups:\n", paste(pseudo_ids_to_drop, collapse = ", "))
+
+# Load the mice package
+library(mice)
+
+# Impute missing values using mice
+imputed_data <- mice(merged_data, method ="sample")
+
+# Replace missing values in merged_data with imputed values
+merged_data <- complete(imputed_data)
+
+# Create a subset for Treatment A - Screen time
+treatment_A <- merged_data[merged_data$Treatment == 'A', ]
+
+# Create a subset for Treatment B - Pickups
+treatment_B <- merged_data[merged_data$Treatment == 'B', ]
+
+# Add treatment.active column to treatment_A
+treatment_A$treatment.active <- ifelse(treatment_A$Date >= as.Date("2024-03-27") & treatment_A$Date <= as.Date("2024-04-02"), 1, 0)
+
+# Add treatment.active column to treatment_B
+treatment_B$treatment.active <- ifelse(treatment_B$Date >= as.Date("2024-03-27") & treatment_B$Date <= as.Date("2024-04-02"), 1, 0)
+
+# Pickups was stored as char --> change to numeric
+treatment_A$Pickups <- as.numeric(treatment_A$Pickups)
+# Warning for B conversion is because there are already NA values
+treatment_B$Pickups <- as.numeric(treatment_B$Pickups)
+
+# Update values of compliance column to make sure the values are correct
+treatment_A$compliance <- ifelse(treatment_A$treatment.active == 1 & treatment_A$Total.ST.min <= 200, 1, 0)
+treatment_B$compliance <- ifelse(treatment_B$treatment.active == 1 & treatment_B$Pickups <= 50, 1, 0)
+
+# Linear model for A because Total.ST.min is continuous
+model_A <- lm(Total.ST.min ~ treatment.active + pets + sex + age, data = treatment_A)
+summary(model_A)
+
+# glm for B with poisson family because Pickups is count data
+model_B <- glm(Pickups ~ treatment.active + pets + sex + age, data = treatment_B, family = poisson)
+summary(model_B)
+```
+
