@@ -129,12 +129,12 @@ pairplot_A <- treatment_A[, c("Total.ST.min", "pets", "sex", "age")]
 pairplot_B <- treatment_B[, c("Pickups", "pets", "sex", "age")]
 
 # Create the pair plot using ggpairs
-ggpairs(pairplot_data)+
-  theme(axis.text = element_text(size = 5))
-ggpairs(pairplot_A)+
-  theme(axis.text = element_text(size = 5))
-ggpairs(pairplot_B)+
-  theme(axis.text = element_text(size = 5))
+ggpairs(pairplot_data) +
+  theme(axis.text = element_text(size = 5)) + ggtitle("Pair Plot for Cleaned Data")
+ggpairs(pairplot_A) +
+  theme(axis.text = element_text(size = 5)) + ggtitle("Pair Plot for Treatment A Data")
+ggpairs(pairplot_B) +
+  theme(axis.text = element_text(size = 5)) + ggtitle("Pair Plot for Treatment B Data")
 
 # Write the summary statistics to an Excel file
 write.xlsx(describe(pairplot_data), file = "merged_baseline_characteristics.xlsx")
