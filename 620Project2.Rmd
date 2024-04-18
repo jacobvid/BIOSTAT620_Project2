@@ -6,6 +6,8 @@ date: "2024-04-15"
 
 Github Link: https://github.com/jacobvid/BIOSTAT620_Project2.git
 
+
+Data cleaning/preprocessing
 ```{r}
 library(readxl)
 
@@ -20,23 +22,58 @@ merged_data <- merge(screentime_data, baseline_data, by = "pseudo_id")
 colnames(merged_data) <- make.names(colnames(merged_data))
 
 # Change columns to numeric that are supposed to be
-numeric_cols <- colnames(merged_data)[!colnames(merged_data) %in% c("Treatment", "Total.ST")]
+numeric_cols <- colnames(merged_data)[!colnames(merged_data) %in% c("Treatment", "Total.ST", "Social.ST", "team", "Date", "Day")]
 merged_data[numeric_cols] <- lapply(merged_data[numeric_cols], as.numeric)
 
-# Calculate the percentage of missing values for each pseudo_id
-missing_percentage <- rowMeans(is.na(merged_data[, c("Total.ST.min", "Pickups")])) * 100
+# Initialize an empty data frame to store the summary
+summary_df <- data.frame(pseudo_id = integer(),
+                         total_st_min_na = integer(),
+                         pickups_na = integer(),
+                         total_observations = integer())
 
-# Identify pseudo_ids with over 50% NA values
-pseudo_ids_to_drop <- names(missing_percentage[missing_percentage > 50])
+# Get unique pseudo_ids
+unique_ids <- unique(merged_data$pseudo_id)
 
-# Drop rows with pseudo_ids that have over 50% NA values
+# Loop through each pseudo_id to calculate summary statistics
+for (id in unique_ids) {
+  subset_data <- merged_data[merged_data$pseudo_id == id, ]
+  total_st_min_na <- sum(is.na(subset_data$Total.ST.min))
+  pickups_na <- sum(is.na(subset_data$Pickups))
+  total_observations <- nrow(subset_data)
+  summary_df <- rbind(summary_df, data.frame(pseudo_id = id,
+                                             total_st_min_na = total_st_min_na,
+                                             pickups_na = pickups_na,
+                                             total_observations = total_observations))
+}
+
+# Calculate ratios of missing data
+summary_df$total_st_min_na_ratio <- summary_df$total_st_min_na / summary_df$total_observations
+summary_df$pickups_na_ratio <- summary_df$pickups_na / summary_df$total_observations
+
+# Identify pseudo_ids with ratios above 0.5
+pseudo_ids_to_drop <- summary_df$pseudo_id[summary_df$total_st_min_na_ratio > 0.5 | summary_df$pickups_na_ratio > 0.5]
+
+# Drop rows with pseudo_ids that have ratios above 0.5
 merged_data <- merged_data[!merged_data$pseudo_id %in% pseudo_ids_to_drop, ]
 
 # Print the pseudo_ids that have been dropped
-cat("Pseudo_ids dropped due to over 50% missing values for Total.ST.min and Pickups:\n", paste(pseudo_ids_to_drop, collapse = ", "))
+cat("Pseudo_ids dropped due to ratio above 0.5 for either total_st_min_na or pickups_na:\n", paste(pseudo_ids_to_drop, collapse = ", "))
 
-# Load the mice package
+# Keep only the desired columns in merged_data
+merged_data <- merged_data[, c("pseudo_id", "Total.ST.min", "Pickups", "pets", "sex", "age", "Date", "Treatment")]
+```
+
+
+Use mice to deal with missing data
+```{r}
+# Load the mice package and set seed
 library(mice)
+set.seed(123)
+
+# Remove Date and Treatment variable temporarily for mice
+date_column <- merged_data$Date
+treatment_column <- merged_data$Treatment
+merged_data <- merged_data[, !(names(merged_data) %in% c("Date"))]
 
 # Impute missing values using mice
 imputed_data <- mice(merged_data, method ="sample")
@@ -44,6 +81,13 @@ imputed_data <- mice(merged_data, method ="sample")
 # Replace missing values in merged_data with imputed values
 merged_data <- complete(imputed_data)
 
+# Add date and treatment back in
+merged_data$Date <- date_column
+merged_data$Treatment <- treatment_column
+```
+
+
+```{r}
 # Create a subset for Treatment A - Screen time
 treatment_A <- merged_data[merged_data$Treatment == 'A', ]
 
@@ -58,7 +102,6 @@ treatment_B$treatment.active <- ifelse(treatment_B$Date >= as.Date("2024-03-27")
 
 # Pickups was stored as char --> change to numeric
 treatment_A$Pickups <- as.numeric(treatment_A$Pickups)
-# Warning for B conversion is because there are already NA values
 treatment_B$Pickups <- as.numeric(treatment_B$Pickups)
 
 # Update values of compliance column to make sure the values are correct
